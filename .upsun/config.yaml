@@ -48,6 +48,6 @@ services:
     container_profile: HIGH_MEMORY
 
 routes:
-  "https://l.{default}/":
+  "https://{default}/":
     type: upstream
     upstream: "url-shortener-golang:http"
