@@ -35,3 +35,7 @@ yarn-error.log*
 **/*.log
 package-lock.json
 **/*.bun
+
+# Claude Code config
+CLAUDE.md
+.claude/

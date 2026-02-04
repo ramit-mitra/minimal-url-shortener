@@ -7,12 +7,16 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	profiler "github.com/blackfireio/go-continuous-profiling"
-	"github.com/jackc/pgx/v4"
+	"github.com/jackc/pgx/v4/pgxpool"
 	"github.com/robfig/cron/v3"
+	"github.com/rs/xid"
 )
 
 type DefaultResponse struct {
@@ -25,27 +29,13 @@ type Payload struct {
 	Expires *int64 `json:"expires,omitempty"`
 }
 
-// PostgreSQL connection
-var dbConn *pgx.Conn
+// PostgreSQL connection pool
+var dbPool *pgxpool.Pool
 
-func encodeToBase62(integer int64) string {
-	const base62Chars = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+// database query timeout
+const dbTimeout = 5 * time.Second
 
-	if integer == 0 {
-		return "0"
-	}
-
-	encoded := ""
-	for integer > 0 {
-		remainder := integer % 62
-		encoded = string(base62Chars[remainder]) + encoded
-		integer /= 62
-	}
-
-	return encoded
-}
-
-// connect to PostgreSQL
+// connect to PostgreSQL with connection pool
 func connectToDB() {
 	var err error
 
@@ -54,17 +44,17 @@ func connectToDB() {
 		log.Fatal("❌ DATABASE_URL variable is not set")
 	}
 
-	dbConn, err = pgx.Connect(context.Background(), connStr)
+	dbPool, err = pgxpool.Connect(context.Background(), connStr)
 	if err != nil {
 		log.Fatalf("😭 Unable to connect to database: %v\n", err)
 	}
 
-	log.Println("🎉 Connected to PostgreSQL")
+	log.Println("🎉 Connected to PostgreSQL (with connection pool)")
 }
 
-// create URLs table if it doesn't exist
+// create URLs table and indexes if they don't exist
 func createTableIfNotExists() {
-	query := `
+	tableQuery := `
 	CREATE TABLE IF NOT EXISTS urls (
 		id SERIAL PRIMARY KEY,
 		shortcode VARCHAR(255) UNIQUE NOT NULL,
@@ -75,16 +65,26 @@ func createTableIfNotExists() {
 	);
 	`
 
-	_, err := dbConn.Exec(context.Background(), query)
+	_, err := dbPool.Exec(context.Background(), tableQuery)
 	if err != nil {
 		log.Fatalf("❌ Failed to create table: %v\n", err)
+	}
+
+	// index on expires_at for faster cleanup queries
+	indexQuery := `CREATE INDEX IF NOT EXISTS idx_urls_expires_at ON urls(expires_at);`
+	_, err = dbPool.Exec(context.Background(), indexQuery)
+	if err != nil {
+		log.Fatalf("❌ Failed to create index: %v\n", err)
 	}
 
 	log.Println("🧑🏽‍💻 Table 'urls' is ready")
 }
 
 // save URL to PostgreSQL
-func saveURLToDB(payload Payload, shortcode string) error {
+func saveURLToDB(ctx context.Context, payload Payload, shortcode string) error {
+	ctx, cancel := context.WithTimeout(ctx, dbTimeout)
+	defer cancel()
+
 	var expiresAt time.Time
 
 	if payload.Expires != nil {
@@ -100,7 +100,7 @@ func saveURLToDB(payload Payload, shortcode string) error {
 		singleUse = *payload.Single
 	}
 
-	_, err := dbConn.Exec(context.Background(),
+	_, err := dbPool.Exec(ctx,
 		"INSERT INTO urls (shortcode, url, single_use, expires_at, created_at) VALUES ($1, $2, $3, $4, $5)",
 		shortcode, payload.URL, singleUse, expiresAt, time.Now())
 	if err != nil {
@@ -111,12 +111,15 @@ func saveURLToDB(payload Payload, shortcode string) error {
 }
 
 // Get URL from PostgreSQL
-func getURLFromDB(shortcode string) (string, bool, time.Time, error) {
+func getURLFromDB(ctx context.Context, shortcode string) (string, bool, time.Time, error) {
+	ctx, cancel := context.WithTimeout(ctx, dbTimeout)
+	defer cancel()
+
 	var url string
 	var singleUse bool
 	var expiresAt time.Time
 
-	err := dbConn.QueryRow(context.Background(),
+	err := dbPool.QueryRow(ctx,
 		"SELECT url, single_use, expires_at FROM urls WHERE shortcode=$1", shortcode).Scan(&url, &singleUse, &expiresAt)
 	if err != nil {
 		return "", false, time.Time{}, err
@@ -126,8 +129,11 @@ func getURLFromDB(shortcode string) (string, bool, time.Time, error) {
 }
 
 // delete URL from PostgreSQL
-func deleteURLFromDB(shortcode string) error {
-	_, err := dbConn.Exec(context.Background(), "DELETE FROM urls WHERE shortcode=$1", shortcode)
+func deleteURLFromDB(ctx context.Context, shortcode string) error {
+	ctx, cancel := context.WithTimeout(ctx, dbTimeout)
+	defer cancel()
+
+	_, err := dbPool.Exec(ctx, "DELETE FROM urls WHERE shortcode=$1", shortcode)
 
 	return err
 }
@@ -167,7 +173,18 @@ func defaultHandler(w http.ResponseWriter, r *http.Request) {
 		var payload Payload
 		err = json.Unmarshal(bodyBytes, &payload)
 		if err != nil {
-			http.Error(w, "Error parsing request body", http.StatusInternalServerError)
+			http.Error(w, "Error parsing request body", http.StatusBadRequest)
+			return
+		}
+
+		// validate URL
+		if payload.URL == "" {
+			http.Error(w, "URL is required", http.StatusBadRequest)
+			return
+		}
+		parsedURL, err := url.ParseRequestURI(payload.URL)
+		if err != nil || (parsedURL.Scheme != "http" && parsedURL.Scheme != "https") {
+			http.Error(w, "Invalid URL: must be a valid http or https URL", http.StatusBadRequest)
 			return
 		}
 
@@ -182,12 +199,11 @@ func defaultHandler(w http.ResponseWriter, r *http.Request) {
 			payload.Expires = &defaultExpires
 		}
 
-		// generate a shortcode
-		// for simplicity, encode current timestamp
-		shortcode := encodeToBase62(time.Now().UnixNano())
+		// generate a globally unique shortcode
+		shortcode := xid.New().String()
 
 		// save the URL to the database
-		err = saveURLToDB(payload, shortcode)
+		err = saveURLToDB(r.Context(), payload, shortcode)
 		if err != nil {
 			http.Error(w, "Error saving to database", http.StatusInternalServerError)
 			return
@@ -207,7 +223,7 @@ func redirectHandler(w http.ResponseWriter, r *http.Request) {
 	log.Println("=> " + r.Method + " " + r.URL.Path + " " + shortcode)
 
 	// get the URL from the database
-	url, singleUse, expiresAt, err := getURLFromDB(shortcode)
+	url, singleUse, expiresAt, err := getURLFromDB(r.Context(), shortcode)
 	if err != nil || url == "" {
 		http.Error(w, "No URL found for this shortcode", http.StatusNotFound)
 		return
@@ -216,7 +232,7 @@ func redirectHandler(w http.ResponseWriter, r *http.Request) {
 	// check if the link has expired
 	if time.Now().After(expiresAt) {
 		// delete expired link
-		deleteURLFromDB(shortcode)
+		deleteURLFromDB(r.Context(), shortcode)
 		http.Error(w, "URL for this shortcode has expired", http.StatusGone)
 		return
 	}
@@ -226,13 +242,16 @@ func redirectHandler(w http.ResponseWriter, r *http.Request) {
 
 	// if it's a single-use link, delete it after redirecting
 	if singleUse {
-		deleteURLFromDB(shortcode)
+		deleteURLFromDB(r.Context(), shortcode)
 	}
 }
 
 // clean expired links
 func cleanExpiredLinks() {
-	_, err := dbConn.Exec(context.Background(), "DELETE FROM urls WHERE expires_at < $1", time.Now())
+	ctx, cancel := context.WithTimeout(context.Background(), dbTimeout)
+	defer cancel()
+
+	_, err := dbPool.Exec(ctx, "DELETE FROM urls WHERE expires_at < $1", time.Now())
 
 	if err != nil {
 		log.Println("😭 Error cleaning expired links:", err)
@@ -258,7 +277,7 @@ func main() {
 
 	// connect to PostgreSQL
 	connectToDB()
-	defer dbConn.Close(context.Background())
+	defer dbPool.Close()
 
 	// create URLs table if it doesn't exist
 	createTableIfNotExists()
@@ -275,14 +294,45 @@ func main() {
 	http.HandleFunc("/short/", redirectHandler)
 
 	// set up cron job to clean expired links
-	c := cron.New()
-	c.AddFunc("@every 5m", cleanExpiredLinks)
-	c.Start()
+	cronScheduler := cron.New()
+	cronScheduler.AddFunc("@every 5m", cleanExpiredLinks)
+	cronScheduler.Start()
 
-	// start server
-	log.Println("🤖 Server started on port", port)
-	err := http.ListenAndServe(":"+port, nil)
-	if err != nil {
-		log.Fatalf("❌ Unable to start server: %v", err)
+	// create server with timeouts
+	server := &http.Server{
+		Addr:         ":" + port,
+		ReadTimeout:  10 * time.Second,
+		WriteTimeout: 10 * time.Second,
+		IdleTimeout:  60 * time.Second,
 	}
+
+	// channel to listen for shutdown signals
+	shutdown := make(chan os.Signal, 1)
+	signal.Notify(shutdown, os.Interrupt, syscall.SIGTERM)
+
+	// start server in goroutine
+	go func() {
+		log.Println("🤖 Server started on port", port)
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("❌ Unable to start server: %v", err)
+		}
+	}()
+
+	// wait for shutdown signal
+	<-shutdown
+	log.Println("🛑 Shutdown signal received, draining connections...")
+
+	// create context with timeout for graceful shutdown
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// stop cron scheduler
+	cronScheduler.Stop()
+
+	// shutdown server gracefully
+	if err := server.Shutdown(ctx); err != nil {
+		log.Fatalf("❌ Server shutdown failed: %v", err)
+	}
+
+	log.Println("👋 Server stopped gracefully")
 }
