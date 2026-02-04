@@ -29,6 +29,9 @@ type Payload struct {
 // PostgreSQL connection pool
 var dbPool *pgxpool.Pool
 
+// database query timeout
+const dbTimeout = 5 * time.Second
+
 // connect to PostgreSQL with connection pool
 func connectToDB() {
 	var err error
@@ -75,7 +78,10 @@ func createTableIfNotExists() {
 }
 
 // save URL to PostgreSQL
-func saveURLToDB(payload Payload, shortcode string) error {
+func saveURLToDB(ctx context.Context, payload Payload, shortcode string) error {
+	ctx, cancel := context.WithTimeout(ctx, dbTimeout)
+	defer cancel()
+
 	var expiresAt time.Time
 
 	if payload.Expires != nil {
@@ -91,7 +97,7 @@ func saveURLToDB(payload Payload, shortcode string) error {
 		singleUse = *payload.Single
 	}
 
-	_, err := dbPool.Exec(context.Background(),
+	_, err := dbPool.Exec(ctx,
 		"INSERT INTO urls (shortcode, url, single_use, expires_at, created_at) VALUES ($1, $2, $3, $4, $5)",
 		shortcode, payload.URL, singleUse, expiresAt, time.Now())
 	if err != nil {
@@ -102,12 +108,15 @@ func saveURLToDB(payload Payload, shortcode string) error {
 }
 
 // Get URL from PostgreSQL
-func getURLFromDB(shortcode string) (string, bool, time.Time, error) {
+func getURLFromDB(ctx context.Context, shortcode string) (string, bool, time.Time, error) {
+	ctx, cancel := context.WithTimeout(ctx, dbTimeout)
+	defer cancel()
+
 	var url string
 	var singleUse bool
 	var expiresAt time.Time
 
-	err := dbPool.QueryRow(context.Background(),
+	err := dbPool.QueryRow(ctx,
 		"SELECT url, single_use, expires_at FROM urls WHERE shortcode=$1", shortcode).Scan(&url, &singleUse, &expiresAt)
 	if err != nil {
 		return "", false, time.Time{}, err
@@ -117,8 +126,11 @@ func getURLFromDB(shortcode string) (string, bool, time.Time, error) {
 }
 
 // delete URL from PostgreSQL
-func deleteURLFromDB(shortcode string) error {
-	_, err := dbPool.Exec(context.Background(), "DELETE FROM urls WHERE shortcode=$1", shortcode)
+func deleteURLFromDB(ctx context.Context, shortcode string) error {
+	ctx, cancel := context.WithTimeout(ctx, dbTimeout)
+	defer cancel()
+
+	_, err := dbPool.Exec(ctx, "DELETE FROM urls WHERE shortcode=$1", shortcode)
 
 	return err
 }
@@ -177,7 +189,7 @@ func defaultHandler(w http.ResponseWriter, r *http.Request) {
 		shortcode := xid.New().String()
 
 		// save the URL to the database
-		err = saveURLToDB(payload, shortcode)
+		err = saveURLToDB(r.Context(), payload, shortcode)
 		if err != nil {
 			http.Error(w, "Error saving to database", http.StatusInternalServerError)
 			return
@@ -197,7 +209,7 @@ func redirectHandler(w http.ResponseWriter, r *http.Request) {
 	log.Println("=> " + r.Method + " " + r.URL.Path + " " + shortcode)
 
 	// get the URL from the database
-	url, singleUse, expiresAt, err := getURLFromDB(shortcode)
+	url, singleUse, expiresAt, err := getURLFromDB(r.Context(), shortcode)
 	if err != nil || url == "" {
 		http.Error(w, "No URL found for this shortcode", http.StatusNotFound)
 		return
@@ -206,7 +218,7 @@ func redirectHandler(w http.ResponseWriter, r *http.Request) {
 	// check if the link has expired
 	if time.Now().After(expiresAt) {
 		// delete expired link
-		deleteURLFromDB(shortcode)
+		deleteURLFromDB(r.Context(), shortcode)
 		http.Error(w, "URL for this shortcode has expired", http.StatusGone)
 		return
 	}
@@ -216,13 +228,16 @@ func redirectHandler(w http.ResponseWriter, r *http.Request) {
 
 	// if it's a single-use link, delete it after redirecting
 	if singleUse {
-		deleteURLFromDB(shortcode)
+		deleteURLFromDB(r.Context(), shortcode)
 	}
 }
 
 // clean expired links
 func cleanExpiredLinks() {
-	_, err := dbPool.Exec(context.Background(), "DELETE FROM urls WHERE expires_at < $1", time.Now())
+	ctx, cancel := context.WithTimeout(context.Background(), dbTimeout)
+	defer cancel()
+
+	_, err := dbPool.Exec(ctx, "DELETE FROM urls WHERE expires_at < $1", time.Now())
 
 	if err != nil {
 		log.Println("😭 Error cleaning expired links:", err)
