@@ -6,6 +6,7 @@ require (
 	github.com/blackfireio/go-continuous-profiling v1.0.4
 	github.com/jackc/pgx/v4 v4.18.3
 	github.com/robfig/cron/v3 v3.0.1
+	github.com/rs/xid v1.6.0
 )
 
 require (

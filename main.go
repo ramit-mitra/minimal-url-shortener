@@ -13,6 +13,7 @@ import (
 	profiler "github.com/blackfireio/go-continuous-profiling"
 	"github.com/jackc/pgx/v4/pgxpool"
 	"github.com/robfig/cron/v3"
+	"github.com/rs/xid"
 )
 
 type DefaultResponse struct {
@@ -27,23 +28,6 @@ type Payload struct {
 
 // PostgreSQL connection pool
 var dbPool *pgxpool.Pool
-
-func encodeToBase62(integer int64) string {
-	const base62Chars = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
-
-	if integer == 0 {
-		return "0"
-	}
-
-	encoded := ""
-	for integer > 0 {
-		remainder := integer % 62
-		encoded = string(base62Chars[remainder]) + encoded
-		integer /= 62
-	}
-
-	return encoded
-}
 
 // connect to PostgreSQL with connection pool
 func connectToDB() {
@@ -189,9 +173,8 @@ func defaultHandler(w http.ResponseWriter, r *http.Request) {
 			payload.Expires = &defaultExpires
 		}
 
-		// generate a shortcode
-		// for simplicity, encode current timestamp
-		shortcode := encodeToBase62(time.Now().UnixNano())
+		// generate a globally unique shortcode
+		shortcode := xid.New().String()
 
 		// save the URL to the database
 		err = saveURLToDB(payload, shortcode)
