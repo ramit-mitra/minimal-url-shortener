@@ -62,9 +62,9 @@ func connectToDB() {
 	log.Println("🎉 Connected to PostgreSQL (with connection pool)")
 }
 
-// create URLs table if it doesn't exist
+// create URLs table and indexes if they don't exist
 func createTableIfNotExists() {
-	query := `
+	tableQuery := `
 	CREATE TABLE IF NOT EXISTS urls (
 		id SERIAL PRIMARY KEY,
 		shortcode VARCHAR(255) UNIQUE NOT NULL,
@@ -75,9 +75,16 @@ func createTableIfNotExists() {
 	);
 	`
 
-	_, err := dbPool.Exec(context.Background(), query)
+	_, err := dbPool.Exec(context.Background(), tableQuery)
 	if err != nil {
 		log.Fatalf("❌ Failed to create table: %v\n", err)
+	}
+
+	// index on expires_at for faster cleanup queries
+	indexQuery := `CREATE INDEX IF NOT EXISTS idx_urls_expires_at ON urls(expires_at);`
+	_, err = dbPool.Exec(context.Background(), indexQuery)
+	if err != nil {
+		log.Fatalf("❌ Failed to create index: %v\n", err)
 	}
 
 	log.Println("🧑🏽‍💻 Table 'urls' is ready")
