@@ -7,7 +7,10 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	profiler "github.com/blackfireio/go-continuous-profiling"
@@ -170,7 +173,18 @@ func defaultHandler(w http.ResponseWriter, r *http.Request) {
 		var payload Payload
 		err = json.Unmarshal(bodyBytes, &payload)
 		if err != nil {
-			http.Error(w, "Error parsing request body", http.StatusInternalServerError)
+			http.Error(w, "Error parsing request body", http.StatusBadRequest)
+			return
+		}
+
+		// validate URL
+		if payload.URL == "" {
+			http.Error(w, "URL is required", http.StatusBadRequest)
+			return
+		}
+		parsedURL, err := url.ParseRequestURI(payload.URL)
+		if err != nil || (parsedURL.Scheme != "http" && parsedURL.Scheme != "https") {
+			http.Error(w, "Invalid URL: must be a valid http or https URL", http.StatusBadRequest)
 			return
 		}
 
@@ -280,14 +294,45 @@ func main() {
 	http.HandleFunc("/short/", redirectHandler)
 
 	// set up cron job to clean expired links
-	c := cron.New()
-	c.AddFunc("@every 5m", cleanExpiredLinks)
-	c.Start()
+	cronScheduler := cron.New()
+	cronScheduler.AddFunc("@every 5m", cleanExpiredLinks)
+	cronScheduler.Start()
 
-	// start server
-	log.Println("🤖 Server started on port", port)
-	err := http.ListenAndServe(":"+port, nil)
-	if err != nil {
-		log.Fatalf("❌ Unable to start server: %v", err)
+	// create server with timeouts
+	server := &http.Server{
+		Addr:         ":" + port,
+		ReadTimeout:  10 * time.Second,
+		WriteTimeout: 10 * time.Second,
+		IdleTimeout:  60 * time.Second,
 	}
+
+	// channel to listen for shutdown signals
+	shutdown := make(chan os.Signal, 1)
+	signal.Notify(shutdown, os.Interrupt, syscall.SIGTERM)
+
+	// start server in goroutine
+	go func() {
+		log.Println("🤖 Server started on port", port)
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("❌ Unable to start server: %v", err)
+		}
+	}()
+
+	// wait for shutdown signal
+	<-shutdown
+	log.Println("🛑 Shutdown signal received, draining connections...")
+
+	// create context with timeout for graceful shutdown
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// stop cron scheduler
+	cronScheduler.Stop()
+
+	// shutdown server gracefully
+	if err := server.Shutdown(ctx); err != nil {
+		log.Fatalf("❌ Server shutdown failed: %v", err)
+	}
+
+	log.Println("👋 Server stopped gracefully")
 }
