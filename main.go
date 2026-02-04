@@ -11,7 +11,7 @@ import (
 	"time"
 
 	profiler "github.com/blackfireio/go-continuous-profiling"
-	"github.com/jackc/pgx/v4"
+	"github.com/jackc/pgx/v4/pgxpool"
 	"github.com/robfig/cron/v3"
 )
 
@@ -25,8 +25,8 @@ type Payload struct {
 	Expires *int64 `json:"expires,omitempty"`
 }
 
-// PostgreSQL connection
-var dbConn *pgx.Conn
+// PostgreSQL connection pool
+var dbPool *pgxpool.Pool
 
 func encodeToBase62(integer int64) string {
 	const base62Chars = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
@@ -45,7 +45,7 @@ func encodeToBase62(integer int64) string {
 	return encoded
 }
 
-// connect to PostgreSQL
+// connect to PostgreSQL with connection pool
 func connectToDB() {
 	var err error
 
@@ -54,12 +54,12 @@ func connectToDB() {
 		log.Fatal("❌ DATABASE_URL variable is not set")
 	}
 
-	dbConn, err = pgx.Connect(context.Background(), connStr)
+	dbPool, err = pgxpool.Connect(context.Background(), connStr)
 	if err != nil {
 		log.Fatalf("😭 Unable to connect to database: %v\n", err)
 	}
 
-	log.Println("🎉 Connected to PostgreSQL")
+	log.Println("🎉 Connected to PostgreSQL (with connection pool)")
 }
 
 // create URLs table if it doesn't exist
@@ -75,7 +75,7 @@ func createTableIfNotExists() {
 	);
 	`
 
-	_, err := dbConn.Exec(context.Background(), query)
+	_, err := dbPool.Exec(context.Background(), query)
 	if err != nil {
 		log.Fatalf("❌ Failed to create table: %v\n", err)
 	}
@@ -100,7 +100,7 @@ func saveURLToDB(payload Payload, shortcode string) error {
 		singleUse = *payload.Single
 	}
 
-	_, err := dbConn.Exec(context.Background(),
+	_, err := dbPool.Exec(context.Background(),
 		"INSERT INTO urls (shortcode, url, single_use, expires_at, created_at) VALUES ($1, $2, $3, $4, $5)",
 		shortcode, payload.URL, singleUse, expiresAt, time.Now())
 	if err != nil {
@@ -116,7 +116,7 @@ func getURLFromDB(shortcode string) (string, bool, time.Time, error) {
 	var singleUse bool
 	var expiresAt time.Time
 
-	err := dbConn.QueryRow(context.Background(),
+	err := dbPool.QueryRow(context.Background(),
 		"SELECT url, single_use, expires_at FROM urls WHERE shortcode=$1", shortcode).Scan(&url, &singleUse, &expiresAt)
 	if err != nil {
 		return "", false, time.Time{}, err
@@ -127,7 +127,7 @@ func getURLFromDB(shortcode string) (string, bool, time.Time, error) {
 
 // delete URL from PostgreSQL
 func deleteURLFromDB(shortcode string) error {
-	_, err := dbConn.Exec(context.Background(), "DELETE FROM urls WHERE shortcode=$1", shortcode)
+	_, err := dbPool.Exec(context.Background(), "DELETE FROM urls WHERE shortcode=$1", shortcode)
 
 	return err
 }
@@ -232,7 +232,7 @@ func redirectHandler(w http.ResponseWriter, r *http.Request) {
 
 // clean expired links
 func cleanExpiredLinks() {
-	_, err := dbConn.Exec(context.Background(), "DELETE FROM urls WHERE expires_at < $1", time.Now())
+	_, err := dbPool.Exec(context.Background(), "DELETE FROM urls WHERE expires_at < $1", time.Now())
 
 	if err != nil {
 		log.Println("😭 Error cleaning expired links:", err)
@@ -258,7 +258,7 @@ func main() {
 
 	// connect to PostgreSQL
 	connectToDB()
-	defer dbConn.Close(context.Background())
+	defer dbPool.Close()
 
 	// create URLs table if it doesn't exist
 	createTableIfNotExists()
