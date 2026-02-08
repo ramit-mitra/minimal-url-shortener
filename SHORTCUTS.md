@@ -1,10 +1,10 @@
 # Apple iPhone Shortcut for URL Shortener
 
-This document outlines how to create an Apple iPhone Shortcut to interact with your `url-shortener-golang` application, accessible at `https://l.ramit.io`.
+This document outlines how to create an Apple iPhone Shortcut to interact with your `url-shortener-golang` application, accessible at `https://your-domain.example.com`.
 
 ## Prerequisites
 
-Ensure your `url-shortener-golang` application is running and publicly accessible at `https://l.ramit.io`.
+Ensure your `url-shortener-golang` application is running and publicly accessible at `https://your-domain.example.com`.
 
 ## Creating the Apple Shortcut
 
@@ -24,15 +24,15 @@ Now, add the following actions:
 ### Action 2: URL
 
 *   Search for "URL" and add the "URL" action.
-*   In the URL field, enter the endpoint of your shortener: `https://l.ramit.io/`.
+*   In the URL field, enter the endpoint of your shortener: `https://your-domain.example.com/`.
 
 ### Action 3: Get Contents of URL
 
 *   Search for "Get Contents of URL" and add it.
 *   Change the **Method** to `POST`.
-*   Tap on "Headers" and add a header:
-    *   Key: `Content-Type`
-    *   Value: `application/json`
+*   Tap on "Headers" and add the following headers:
+    *   Key: `Content-Type`, Value: `application/json`
+    *   Key: `X-API-Key`, Value: `(your API_KEY value)`
 *   Tap on "Request Body" and select `JSON`.
 *   Add a new field:
     *   Key: `url`
@@ -51,8 +51,8 @@ Now, add the following actions:
 ### Action 5: Text
 
 *   Search for "Text" and add the "Text" action.
-*   In the text field, construct your full short URL: `https://l.ramit.io/short/` followed by the "Shortcode" (the output from Action 4). Tap on the magic variable icon (looks like a square with a dashed outline) and select the "shortcode" output from the previous step.
-*   The final text in this action will look something like: `https://l.ramit.io/short/SHORTCODE_VARIABLE`
+*   In the text field, construct your full short URL: `https://your-domain.example.com/` followed by the "Shortcode" (the output from Action 4). Tap on the magic variable icon (looks like a square with a dashed outline) and select the "shortcode" output from the previous step.
+*   The final text in this action will look something like: `https://your-domain.example.com/SHORTCODE_VARIABLE`
 
 ### Action 6: Copy to Clipboard
 
@@ -69,8 +69,8 @@ Now, add the following actions:
 
 Once set up, this shortcut will:
 1.  Take a URL as input (from clipboard, share sheet, or manual entry).
-2.  Send a `POST` request to your `url-shortener-golang` application at `https://l.ramit.io/` with the long URL.
+2.  Send a `POST` request to your `url-shortener-golang` application at `https://your-domain.example.com/` with the long URL.
 3.  Extract the generated `shortcode` from the application's JSON response.
-4.  Construct the full short URL (e.g., `https://l.ramit.io/short/YOUR_SHORTCODE`).
+4.  Construct the full short URL (e.g., `https://your-domain.example.com/short/YOUR_SHORTCODE`).
 5.  Copy this short URL to your iPhone's clipboard.
 6.  (Optionally) Display a notification showing the newly created short URL.

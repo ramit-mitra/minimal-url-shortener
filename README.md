@@ -52,6 +52,24 @@ curl -skX POST http://localhost:1234/ -d '{"url": "https://ramit.io"}' | jq .
 curl -sk http://localhost:1234/24qAMU10CBG
 ```
 
+## Authentication
+
+The POST endpoint (URL creation) can be protected with an API key. Set the `API_KEY` environment variable to enable it.
+
+```bash
+export API_KEY=your-secret-key
+```
+
+When `API_KEY` is set, all POST requests must include the `X-API-Key` header:
+
+```bash
+curl -skX POST http://localhost:1234/ \
+  -H "X-API-Key: your-secret-key" \
+  -d '{"url": "https://ramit.io"}' | jq .
+```
+
+If `API_KEY` is not set, the POST endpoint is open (useful for local development).
+
 ## Rate Limiting
 
 All IPs are rate limited to **10 requests per minute** on the POST endpoint (URL creation). This can be configured via the `RATE_LIMIT_PER_MINUTE` environment variable.

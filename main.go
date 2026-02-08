@@ -234,6 +234,14 @@ func defaultHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		// API key check
+		if apiKey := os.Getenv("API_KEY"); apiKey != "" {
+			if r.Header.Get("X-API-Key") != apiKey {
+				http.Error(w, "Unauthorized", http.StatusUnauthorized)
+				return
+			}
+		}
+
 		bodyBytes, err := io.ReadAll(r.Body)
 		if err != nil {
 			http.Error(w, "Error reading request body", http.StatusInternalServerError)
@@ -285,6 +293,9 @@ func defaultHandler(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
+
+	// reject all other methods
+	http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 }
 
 // redirect handler for the shortcode
