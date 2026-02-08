@@ -2,7 +2,7 @@
 # https://docs.upsun.com/create-apps/app-reference.html
 
 applications:
-  url-shortener-golang:
+  minimal-url-shortener:
     source:
       root: "/"
 
@@ -50,4 +50,4 @@ services:
 routes:
   "https://{default}/":
     type: upstream
-    upstream: "url-shortener-golang:http"
+    upstream: "minimal-url-shortener:http"
