@@ -210,7 +210,7 @@ func defaultHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		jsonData, err := json.Marshal(data)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			http.Error(w, "Internal server error", http.StatusInternalServerError)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
@@ -242,6 +242,8 @@ func defaultHandler(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
+		// limit request body to 1MB
+		r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 		bodyBytes, err := io.ReadAll(r.Body)
 		if err != nil {
 			http.Error(w, "Error reading request body", http.StatusInternalServerError)
