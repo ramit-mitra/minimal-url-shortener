@@ -1,6 +1,6 @@
 module github.com/ramit-mitra/url-shortener-golang
 
-go 1.26
+go 1.25
 
 require (
 	github.com/blackfireio/go-continuous-profiling v1.0.4
