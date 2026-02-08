@@ -219,17 +219,8 @@ func defaultHandler(w http.ResponseWriter, r *http.Request) {
 
 // redirect handler for the shortcode
 func redirectHandler(w http.ResponseWriter, r *http.Request) {
-	// extract shortcode from path
-	shortcode := ""
-	if r.URL.Path[len("/short/"):] != "" {
-		shortcode = r.URL.Path[len("/short/"):]
-	} else {
-		// for direct shortcode URLs like /abc123
-		pathParts := strings.Split(r.URL.Path, "/")
-		if len(pathParts) > 1 {
-			shortcode = pathParts[1]
-		}
-	}
+	// extract shortcode from path (e.g., /abc123 -> abc123)
+	shortcode := strings.TrimPrefix(r.URL.Path, "/")
 
 	log.Println("=> " + r.Method + " " + r.URL.Path + " " + shortcode)
 
@@ -307,14 +298,8 @@ func main() {
 	}
 
 	// set up routes
-	http.HandleFunc("/", defaultHandler)
-	// http.HandleFunc("/short/", redirectHandler)
-	// removed /short/ route to clean up routing
-	// removed /short/ route
-	// handle direct shortcode URLs (e.g., /abc123)
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		// only handle GET requests to paths that look like shortcodes (no slashes)
-		if r.Method == "GET" && r.URL.Path != "/" && !strings.Contains(r.URL.Path, "/") {
+		if r.Method == "GET" && r.URL.Path != "/" && !strings.Contains(r.URL.Path[1:], "/") {
 			redirectHandler(w, r)
 		} else {
 			defaultHandler(w, r)
