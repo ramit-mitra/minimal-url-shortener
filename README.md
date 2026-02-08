@@ -43,7 +43,7 @@ curl -sk http://localhost:1234/ | jq .
 ### Create a shortcode
 
 ```bash
-curl -skX POST http://localhost:1234/ -d '{"url": "https://ramit.io"}' | jq .
+curl -skX POST http://localhost:1234/ -d '{"url": "https://example.com"}' | jq .
 ```
 
 ### Retrieve URL using shortcode
@@ -65,7 +65,7 @@ When `API_KEY` is set, all POST requests must include the `X-API-Key` header:
 ```bash
 curl -skX POST http://localhost:1234/ \
   -H "X-API-Key: your-secret-key" \
-  -d '{"url": "https://ramit.io"}' | jq .
+  -d '{"url": "https://example.com"}' | jq .
 ```
 
 If `API_KEY` is not set, the POST endpoint is open (useful for local development).
