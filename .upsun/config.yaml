@@ -6,7 +6,7 @@ applications:
     source:
       root: "/"
 
-    type: "golang:1.26"
+    type: "golang:1.25"
 
     container_profile: HIGH_CPU
 
