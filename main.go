@@ -10,7 +10,9 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -19,6 +21,64 @@ import (
 	"github.com/robfig/cron/v3"
 	"github.com/rs/xid"
 )
+
+// rate limiter per IP
+type rateLimiter struct {
+	mu       sync.Mutex
+	visitors map[string]*visitor
+	limit    int
+	window   time.Duration
+}
+
+type visitor struct {
+	count    int
+	windowStart time.Time
+}
+
+var limiter *rateLimiter
+
+func newRateLimiter(limit int) *rateLimiter {
+	rl := &rateLimiter{
+		visitors: make(map[string]*visitor),
+		limit:    limit,
+		window:   time.Minute,
+	}
+	// clean up stale entries every 5 minutes
+	go func() {
+		for {
+			time.Sleep(5 * time.Minute)
+			rl.mu.Lock()
+			now := time.Now()
+			for ip, v := range rl.visitors {
+				if now.Sub(v.windowStart) > rl.window {
+					delete(rl.visitors, ip)
+				}
+			}
+			rl.mu.Unlock()
+		}
+	}()
+	return rl
+}
+
+func (rl *rateLimiter) allow(ip string) bool {
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+
+	now := time.Now()
+	v, exists := rl.visitors[ip]
+
+	if !exists || now.Sub(v.windowStart) > rl.window {
+		rl.visitors[ip] = &visitor{count: 1, windowStart: now}
+		return true
+	}
+
+	if v.count >= rl.limit {
+		return false
+	}
+
+	v.count++
+	return true
+}
 
 type DefaultResponse struct {
 	Message string `json:"message"`
@@ -164,6 +224,16 @@ func defaultHandler(w http.ResponseWriter, r *http.Request) {
 
 	// handle POST request
 	if r.Method == "POST" {
+		// rate limit check
+		ip := r.RemoteAddr
+		if i := strings.LastIndex(ip, ":"); i != -1 {
+			ip = ip[:i]
+		}
+		if !limiter.allow(ip) {
+			http.Error(w, "Rate limit exceeded. Try again later.", http.StatusTooManyRequests)
+			return
+		}
+
 		bodyBytes, err := io.ReadAll(r.Body)
 		if err != nil {
 			http.Error(w, "Error reading request body", http.StatusInternalServerError)
@@ -282,6 +352,16 @@ func main() {
 	} else {
 		log.Println("🦦 PLATFORM_APPLICATION not set. Skipping Blackfire profiler initialization.")
 	}
+
+	// initialize rate limiter
+	rateLimit := 10
+	if v := os.Getenv("RATE_LIMIT_PER_MINUTE"); v != "" {
+		if parsed, err := strconv.Atoi(v); err == nil && parsed > 0 {
+			rateLimit = parsed
+		}
+	}
+	limiter = newRateLimiter(rateLimit)
+	log.Printf("🚦 Rate limiter: %d requests per minute per IP", rateLimit)
 
 	// connect to PostgreSQL
 	connectToDB()

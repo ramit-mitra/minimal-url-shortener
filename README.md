@@ -52,6 +52,15 @@ curl -skX POST http://localhost:1234/ -d '{"url": "https://ramit.io"}' | jq .
 curl -sk http://localhost:1234/24qAMU10CBG
 ```
 
+## Rate Limiting
+
+All IPs are rate limited to **10 requests per minute** on the POST endpoint (URL creation). This can be configured via the `RATE_LIMIT_PER_MINUTE` environment variable.
+
+```bash
+# example: allow 30 requests per minute per IP
+export RATE_LIMIT_PER_MINUTE=30
+```
+
 ## Deploy in production
 
 Deploy to [upsun.com](https://upsun.com/). Configuration files are present in `.upsun` directory.
