@@ -1,4 +1,4 @@
-# url-shortener-golang
+# minimal-url-shortener
 
 ## Getting Started
 
@@ -21,6 +21,7 @@ Generate a `short link` for a given URL.
 | GET         | `/`            | default endpoint                                                   |
 | POST        | `/`            | create a `short link`                                              |
 | GET         | `/short/:code` | send `short code` and get redirected to the actual URL (if exists) |
+| GET         | `/:code`       | send `short code` and get redirected to the actual URL (if exists) |
 
 ## Development
 
@@ -49,7 +50,11 @@ curl -skX POST http://localhost:1234/ -d '{"url": "https://ramit.io"}' | jq .
 #### Retrieve URL using shortcode
 
 ```bash
+# Using /short/ endpoint
 curl -sk http://localhost:1234/short/24qAMU10CBG
+
+# Using direct endpoint  
+curl -sk http://localhost:1234/24qAMU10CBG
 ```
 
 ## Deploy in production
@@ -58,6 +63,6 @@ Deploy to [upsun.com](https://upsun.com/). Configuration files are present in `.
 
 ## Suggestions and feedback
 
-Got ideas 💡 about a `feature` or an `enhancement`? Feel free to [open a PR](https://github.com/ramit-mitra/url-shortener-golang/pulls).
+Got ideas 💡 about a `feature` or an `enhancement`? Feel free to [open a PR](https://github.com/ramit-mitra/minimal-url-shortener/pulls).
 
-Found a 🐞? Feel free to [open a PR](https://github.com/ramit-mitra/url-shortener-golang/pulls) and contribute.
+Found a 🐞? Feel free to [open a PR](https://github.com/ramit-mitra/minimal-url-shortener/pulls) and contribute.
