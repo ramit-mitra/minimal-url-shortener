@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -110,7 +111,7 @@ func saveURLToDB(ctx context.Context, payload Payload, shortcode string) error {
 	return nil
 }
 
-// Get URL from PostgreSQL
+// get URL from PostgreSQL
 func getURLFromDB(ctx context.Context, shortcode string) (string, bool, time.Time, error) {
 	ctx, cancel := context.WithTimeout(ctx, dbTimeout)
 	defer cancel()
@@ -218,9 +219,25 @@ func defaultHandler(w http.ResponseWriter, r *http.Request) {
 
 // redirect handler for the shortcode
 func redirectHandler(w http.ResponseWriter, r *http.Request) {
-	shortcode := r.URL.Path[len("/short/"):]
+	// extract shortcode from path
+	shortcode := ""
+	if r.URL.Path[len("/short/"):] != "" {
+		shortcode = r.URL.Path[len("/short/"):]
+	} else {
+		// for direct shortcode URLs like /abc123
+		pathParts := strings.Split(r.URL.Path, "/")
+		if len(pathParts) > 1 {
+			shortcode = pathParts[1]
+		}
+	}
 
 	log.Println("=> " + r.Method + " " + r.URL.Path + " " + shortcode)
+
+	// check if shortcode exists before attempting to get from DB
+	if shortcode == "" {
+		http.Error(w, "No URL found for this shortcode", http.StatusNotFound)
+		return
+	}
 
 	// get the URL from the database
 	url, singleUse, expiresAt, err := getURLFromDB(r.Context(), shortcode)
@@ -292,6 +309,15 @@ func main() {
 	// set up routes
 	http.HandleFunc("/", defaultHandler)
 	http.HandleFunc("/short/", redirectHandler)
+	// handle direct shortcode URLs (e.g., /abc123)
+	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		// only handle GET requests to paths that look like shortcodes (no slashes)
+		if r.Method == "GET" && r.URL.Path != "/" && !strings.Contains(r.URL.Path, "/") {
+			redirectHandler(w, r)
+		} else {
+			defaultHandler(w, r)
+		}
+	})
 
 	// set up cron job to clean expired links
 	cronScheduler := cron.New()
