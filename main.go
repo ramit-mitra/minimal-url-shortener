@@ -308,7 +308,9 @@ func main() {
 
 	// set up routes
 	http.HandleFunc("/", defaultHandler)
-	http.HandleFunc("/short/", redirectHandler)
+	// http.HandleFunc("/short/", redirectHandler)
+	// removed /short/ route to clean up routing
+	// removed /short/ route
 	// handle direct shortcode URLs (e.g., /abc123)
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		// only handle GET requests to paths that look like shortcodes (no slashes)

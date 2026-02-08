@@ -16,12 +16,11 @@ Generate a `short link` for a given URL.
 
 ## Routes
 
-| HTTP Method | Path           | Description                                                        |
-| ----------- | -------------- | ------------------------------------------------------------------ |
-| GET         | `/`            | default endpoint                                                   |
-| POST        | `/`            | create a `short link`                                              |
-| GET         | `/short/:code` | send `short code` and get redirected to the actual URL (if exists) |
-| GET         | `/:code`       | send `short code` and get redirected to the actual URL (if exists) |
+| HTTP Method | Path | Description |
+| ----------- | ---- | ----------- |
+| GET | `/` | default endpoint |
+| POST | `/` | create a `short link` |
+| GET | `/:code` | send `short code` and get redirected to the actual URL (if exists) |
 
 ## Development
 
@@ -33,27 +32,23 @@ docker compose up --build --watch
 
 Open <http://localhost:1234/> with your browser to see the result. Prefer using `curl` like a true geek.
 
-### Examples
+## Examples
 
-#### Get homepage
+### Get homepage
 
 ```bash
 curl -sk http://localhost:1234/ | jq .
 ```
 
-#### Create a shortcode
+### Create a shortcode
 
 ```bash
 curl -skX POST http://localhost:1234/ -d '{"url": "https://ramit.io"}' | jq .
 ```
 
-#### Retrieve URL using shortcode
+### Retrieve URL using shortcode
 
 ```bash
-# Using /short/ endpoint
-curl -sk http://localhost:1234/short/24qAMU10CBG
-
-# Using direct endpoint  
 curl -sk http://localhost:1234/24qAMU10CBG
 ```
 
