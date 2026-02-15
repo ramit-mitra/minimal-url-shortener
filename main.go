@@ -394,6 +394,8 @@ func main() {
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == "GET" && r.URL.Path != "/" && !strings.Contains(r.URL.Path[1:], "/") {
 			redirectHandler(w, r)
+		} else if r.Method == "GET" && r.URL.Path != "/" {
+			http.Error(w, "Not found", http.StatusNotFound)
 		} else {
 			defaultHandler(w, r)
 		}
