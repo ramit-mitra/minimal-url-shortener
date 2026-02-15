@@ -31,7 +31,7 @@ type rateLimiter struct {
 }
 
 type visitor struct {
-	count    int
+	count       int
 	windowStart time.Time
 }
 
@@ -309,14 +309,14 @@ func redirectHandler(w http.ResponseWriter, r *http.Request) {
 
 	// check if shortcode exists before attempting to get from DB
 	if shortcode == "" {
-		http.Error(w, "No URL found for this shortcode", http.StatusNotFound)
+		http.Error(w, "Not found", http.StatusNotFound)
 		return
 	}
 
 	// get the URL from the database
 	url, singleUse, expiresAt, err := getURLFromDB(r.Context(), shortcode)
 	if err != nil || url == "" {
-		http.Error(w, "No URL found for this shortcode", http.StatusNotFound)
+		http.Error(w, "Not found", http.StatusNotFound)
 		return
 	}
 
